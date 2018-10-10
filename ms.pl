@@ -1,28 +1,42 @@
-:- use_module(library(clpfd)), use_module(library(random)), use_module(library(ordsets)).
+:- use_module(library(clpfd)), use_module(library(random)), use_module(library(ordsets)), use_module(library(lists)).
+
+
 
 %Cells is a list of rows of cells
 %Valid moves: Reveal,flag,
 test(H,W,N,C,M):-
 	initialize(minesweeper,(H,W,N,C,M)).
 
-play(Game) :-
+%startprompt(Height,Width,N).
+
+
+play :-
 	%initialize(Game,State),
-	State = (10,10,5,_Cells,_Mines),
-	initialize(Game,State), 
+	State = (5,5,5,_Cells,_Mines),
+	initialize(State), 
 	display_game(State),
 	play(State,_Result).
 
-%play(State,Result) :-
-%	game_over(State,Result),
-%	!, announce(Result).
+play(State,Result) :-
+	game_over(State,Result),
+	!, announce(Result).
 
 play(State,Result) :-
 	choose_move(State,Move),
 	legal_move(State,Move),
-	write('legal move!'), nl,
+	%write('legal move!'), nl,
 	move(State,Move,State1),
 	display_game(State1),
 	!, play(State1,Result).
+
+game_over((_,_,0,([],[],_),_),'You win!').
+
+game_over((_,_,N,([],[],_),_),'You lose!') :-
+	N > 0.
+
+announce(Result) :-
+	write(Result), nl.
+	
 
 display_game((_Height,Width,_NMines,(A,B,C),_Mines)) :-
 	length(A,La),length(B,Lb),length(C,Lc),
@@ -31,65 +45,7 @@ display_game((_Height,Width,_NMines,(A,B,C),_Mines)) :-
 	display_cells(Board,Width,0),
 	nl.
 
-
-choose_move(State,Move) :-
-	player_move(State,Move).
-choose_move(State,Move) :-
-	write('ai move.'), nl,
-	ai_move(State,Move).
-choose_move(_,_) :-
-	write('No move.'), nl.
-
-player_move(_State,(Y,X)) :-
-	write('enter move:'),
-	nl,
-	catch(read((Y,X)), _Error, false).
-
-ai_move((_H,_W,_,(Dos,_Cons,_Dones),_M),(Y,X)) :-
-	trace,
-	member(cell((Y,X),N),Dos),		%Generate
-	nonvar(N),N=0.					%Test
-
-ai_move((_H,_W,_,(Dos,_Cons,_Dones),_M),flag(Y,X)) :-
-	trace,
-	member(cell((Y,X),(_,N)),Dos),	%Generate
-	nonvar(N), N=1.					%Test
-
-
-valid_mines(Cells,[Con|Cons]) :-
-	all_adjacent(Cells,Con,Ads),
-	Con = cell(_,(_,N)),
-	sum_mines(Ads,N),
-	valid_mines(Cells,Cons).
-valid_mines(_,[]).
-
-	
-
-
-	
-
-legal_move((Height,Width,_,_,_),(Y,X)) :-
-	\+((Y<0; X<0; Height=<Y; Width=<X)).
-
-
-move(State,(Y,X),State1) :-
-	write('Time to move...'), nl,
-	State = (H,W,N,Cells,Mines),
-	State1 = (H,W,N,Cells1,Mines),
-	%trace,
-	reveal((Y,X),Cells,Mines,Cells1).
-
-%move(State,flag(Y,X),State1) :-
-	%State = (H,W,N,Cells,Mines).
-
-
-%prompt(X) :-
-	
-
-game_over(_State,_Result) :-
-	fail.
-
-initialize(minesweeper,(Height,Width,NMines,(Dos,[],[]),Mines)) :-
+initialize((Height,Width,NMines,(Dos,[],[]),Mines)) :-
 	Height>0, Width>0,
 	%assert((invalidcoord(Y,X):- Y<0; X<0; Height=<Y; Width=<X)),
 	NCells is Height*Width,
@@ -97,8 +53,8 @@ initialize(minesweeper,(Height,Width,NMines,(Dos,[],[]),Mines)) :-
 	build_cells(0,0,Height,Width,Dos),
 	place_mines(NMines,Dos,Mines).
 
-build_cells(Y,X,H,W,[cell((Y,X),(_,Mine))|Cells]) :-
-	Mine in 0..1,
+build_cells(Y,X,H,W,[cell((Y,X),(_,_))|Cells]) :-
+	%Mine in 0..1,
 	Y < H,
 	X1 is (X+1) mod W,
 	Y1 is Y+((X+1)//W),
@@ -114,12 +70,177 @@ place_mines(M,Cells,[cell(Pos,('*',1))|Mines]) :-
 	place_mines(M1,Cells1,Mines).
 place_mines(0,_,[]).
 
+
+choose_move(State,Move) :-
+	player_move(State,Move).
+choose_move(State,Move) :-
+	write('ai move.'), nl,
+	ai_evaluate_constraints(State),
+	ai_move(State,Move).
+choose_move(_,nomove) :-
+	write('No move.'), nl.
+
+
+
+player_move(_State,Move) :-
+	write('enter move:'),
+	nl,
+	catch(read(Move), _Error, false).
+
+
+ai_move((_H,_W,_,(Dos,_Cons,_Dones),_M),flag(Y,X)) :-
+	%trace,
+	member(cell((Y,X),(Flag,N)),Dos),	%Generate
+	N==1, var(Flag).				%Test
+
+ai_move((_H,_W,_,(Dos,_Cons,_Dones),_M),(Y,X)) :-
+	%trace,
+	member(cell((Y,X),(_,N)),Dos),		%Generate
+	N==0.					%Test
+
+ai_move((_H,_W,_,(Dos,_Cons,_Dones),_M),Pos) :-
+	write('Guess: '),nl,
+	%trace,
+	getvars(Dos,Vars),
+	findall(Vars,(labeling([],Vars)),L),
+	transpose(L,L1),
+	sumlists(L1,Sumlist),
+	min_member(Min,Sumlist),
+	nth0(Index,Sumlist,Min),
+	nth0(Index,Dos,cell(Pos,_)),
+	write(Sumlist),nl,
+	write(Pos),nl.
+
+sumlists([L|Ls],[Sum|Sums]) :-
+	sumlist(L,Sum),
+	sumlists(Ls,Sums).
+sumlists([],[]).
+
+
+
+ai_evaluate_constraints((_H,_W,N,(Dos,Cons,_Dones),_M)) :-
+	valid_mines(Dos,Cons,N).
+
+getvars([cell(_,(_,Var))|Cells],[Var|Vars]) :-
+	getvars(Cells,Vars).
+getvars([],[]).
+
+%ai_move().
+
+
+
+
+valid_mines(Cells,[Con|Cons],N) :-
+	all_adjacent(Con,Cells,Ads),
+	Con = cell(_,(NAdj,_)),
+	sum_mines(Ads,NAdj),
+	memberchks(Ads,Cells),
+	valid_mines(Cells,Cons,N).
+valid_mines(Cells,[],N) :-
+	sum_mines(Cells,N).
+
+	
+
+
+legal_move(State,flag(Y,X)) :-
+	legal_move(State,(Y,X)).
+
+legal_move((Height,Width,_,_,_),(Y,X)) :-
+	\+((Y<0; X<0; Height=<Y; Width=<X)).
+
+legal_move(_,nomove).
+
+%If attempting to reveal a mine, end game by moving all cells to Dones
+move(State,(Y,X),State1) :-
+	State = (H,W,N,(Dos,Cons,Dones),Mines),
+	memberchk(cell((Y,X),_),Mines),
+	write('Uh-oh! Revealed a mine!'), nl,
+	%trace,
+	reveal_mine((Y,X),Dos),
+	ord_union(Dos,Cons,Cs),
+	ord_union(Cs,Dones,Dones1),
+	State1 = (H,W,N,([],[],Dones1),Mines).
+
+%Reveal safe cell
+move(State,(Y,X),State1) :-
+	State = (H,W,N,Cells,Mines),
+	\+(memberchk(cell((Y,X),_),Mines)),
+	write('Revealing: '), write((Y,X)), nl,
+	%trace,
+	reveal((Y,X),Cells,Mines,Cells1),
+	prune_done(Cells1,Mines,Cells2),
+	State1 = (H,W,N,Cells2,Mines).
+
+move(State,flag(Y,X),State1) :-
+	State = (H,W,N,(Dos,Cons,Dones),Mines),
+	\+memberchk(cell((Y,X),_),Mines),
+	flag((Y,X),(Dos,Cons,Dones)),
+	write('Whoops! Flagged a safe tile! at '), write((Y,X)), nl,
+	%trace,
+	ord_union(Dos,Cons,Cs),
+	ord_union(Cs,Dones,Dones1),
+	State1 = (H,W,N,([],[],Dones1),Mines).
+
+
+%Flag cell
+move(State,flag(Y,X),State1) :-
+	State = (H,W,N,Cells,Mines),
+	%N1 is N - 1,
+	memberchk(cell((Y,X),_),Mines),
+	write('Flagging: '), write((Y,X)), nl,
+	flag((Y,X),Cells),
+	%trace,
+	prune_done(Cells,Mines,Cells1),
+	State1 = (H,W,N,Cells1,Mines).
+	
+
+
+move(S,nomove,S).
+
+
+%prompt(X) :-
+	
+
+
+
+
+flag((Y,X),(Dos,_,_)) :-
+	C = cell((Y,X),_),
+	flagged(C),
+	memberchk(C,Dos).
+
+%prune_done(Cells,[cell((Y,X),_)|Mines],Cells2) :-
+%	%trace,
+%	Cells = (Dos,Cons,Dones),
+%	C = cell((Y,X),_),
+%	memberchk(C,Dos),
+%	all_adjacent(cell((Y,X),_),Cons,Ads),
+%	cons_satisfied(Ads,Dos),
+%	%trace,
+%	%trace,
+%	ord_del_element(Dos,C,Dos1),
+%	write('deleted: '), write(C), nl,
+%	ord_add_element(Dones,C,Dones1),
+%	ord_subtract(Cons,Ads,Cons1),
+%	ord_union(Dones1,Ads,Dones2),
+%	Cells1 = (Dos1,Cons1,Dones2),
+%	prune_done(Cells1,Mines,Cells2).
+%prune_done(Cells,[_|Mines],Cells1) :-
+	%prune_done(Cells,Mines,Cells1).
+prune_done(Cells,_,Cells).
+
+%prune_satisfied(a).
+
+
 %If no adjacent, reveal neighbours
-%To fucking do: redo all the reveal
+%To do: redo all the reveal
 %Outline > Reveal current tile, reveal neighbour tile recursively until no unrevealed neighbours available.
 %Maybe have a first function that checks how many nearby mines and then two variant reveal functions for either 0 or else
 %
 %build a list recursively then move them after the initial call returns
+reveal_mine((Y,X),Dos) :-
+	memberchk(cell((Y,X),('*',1)),Dos).
+
 reveal((Y,X),Cells,Mines,Cells1) :-
 	C = cell((Y,X),(N,0)),
 	n_adjacent(C,Mines,N),
@@ -146,11 +267,6 @@ reveal(C,N,Cells,_Mines,Cells1) :-
 	memberchk(C,Dos),
 	ord_del_element(Dos,C,Dos1),
 	ord_add_element(Cons,C,Cons1),
-	all_adjacent(C,Dos1,Ads),
-	%trace,
-	sum_mines(Ads,N),
-	write(Ads),
-	memberchks(Ads,Dos1),
 	Cells1 = (Dos1,Cons1,Dones).
 
 reveal_neighbours(C,Cells,Mines,Cells2):-
@@ -163,47 +279,6 @@ reveal_neighbours(C,Cells,Mines,Cells2):-
 
 reveal_neighbours(C,(Dos,Cons,Dones),_M,(Dos,Cons,Dones)):-
 	n_adjacent(C,Dos,0).
-
-
-
-%reveal((Y,X),(Dos,Cons,Dones),Mines,Cells2) :-
-%	n_adjacent(cell((Y,X),_),Mines,0),!,
-%	%Cells = (Dos,Cons,Dones),
-%	Cells1 = (Dos2,Cons,Dones1),
-%	%Cells2 = (Dos2,Cons2,Dones2),
-%	write('reveal 1 called'),nl,
-%	C = cell((Y,X),(0,0)),
-%	memberchk(C,Dos),
-%	ord_del_element(Dos,C,Dos1),
-%	ord_add_element(Dones,C,Dones1),
-%	all_adjacent(C,Dos1,Adj),
-%	%ord_subtract(Dos1,Adj,Dos2),
-
-%	fill_reveal(Adj,Cells1,Mines,Cells2).
-
-%reveal((Y,X),Cells,Mines,Cells1) :-
-%	Cells = (Dos,Cons,Dones),
-%	Cells1 = (Dos1,Cons1,Dones),
-%	write('reveal 2 called'),nl,
-%	C = cell((Y,X),(N,0)),
-%	n_adjacent(C,Mines,N),
-%	memberchk(C,Dos),
-%	ord_del_element(Dos,C,Dos1),
-%	ord_add_element(Cons,C,Cons1).
-
-%fill_reveal([cell((Y,X),_)|Cs],Cells,Mines,Cells2) :-
-%	reveal((Y,X),Cells,Mines,Cells1),
-%	fill_reveal(Cs,Cells1,Mines,Cells2).
-%fill_reveal([],Cs,_,Cs).
-
-
-	
-
-%reveal(cell(_Pos,(N,0)),N).
-%flag(cell(_Pos,('*',1))).
-
-%flag(Pos,Cells,Mines,Cells1) :-
-%	memberchk(cell(Pos,_),Mines),
 
 	
 
@@ -252,8 +327,27 @@ all_adjacent(Cell,Cells,Ads) :-
 get_adjacent(C,Cells,Ad) :-
 	member(Ad,Cells), adjacent(C,Ad).
 
+adjacent_flags(Cell,Cells,N) :-
+	findall(C,(member(C,Cells),adjacent(Cell,C),is_flagged(C)),Ads),
+	length(Ads,N).
+
+constraint(cell(_,(N,0)),N).
+
+%Constraints have all surrounding mines in Dos flagged
+cons_satisfied([C|Cs],Dos) :-
+	constraint(C,N),
+	adjacent_flags(C,Dos,N),
+	cons_satisfied(Cs,Dos).
+cons_satisfied([],_).
+
+
+
+flagged(cell(_,('F',1))).
+is_flagged(cell(_,Content)) :- Content == ('F',1).
+	
 
 sum_mines([cell(_,(_,Mine))|Cs],Sum) :-
+	Mine in 0..1,
 	Sum #= Sum1 + Mine,
 	sum_mines(Cs,Sum1).
 sum_mines([],0).
@@ -272,16 +366,14 @@ display_cells([],_W,_).
 	%format("~*_",[W]).
 
 display_cell(cell(_Pos,(Content,_))) :-
-	%memberchk(cell,)
 	var(Content),
-	format("-",[]).
-
-display_cell(cell(_Pos,(Content,_))) :-
-	var(Content),
-	format("-",[]).
+	format('-',[]).
 display_cell(cell(_Pos,(Content,_))) :-
 	integer(Content),
+	Content \= 0,
 	format("~d",[Content]).
+display_cell(cell(_Pos,(0,_))) :-
+	format('.',[]).
 display_cell(cell(_Pos,(Content,_))) :-
 	nonvar(Content),
 	format(Content,[]).

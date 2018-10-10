@@ -12,10 +12,10 @@ test(H,W,N,C,M):-
 
 play :-
 	%initialize(Game,State),
-	State = (5,5,5,_Cells,_Mines),
-	initialize(State), 
-	display_game(State),
-	play(State,_Result).
+	State = (5,5,10,_Cells,_Mines),
+	initialize(State,State1), 
+	display_game(State1),
+	play(State1,_Result).
 
 play(State,Result) :-
 	game_over(State,Result),
@@ -45,13 +45,29 @@ display_game((_Height,Width,_NMines,(A,B,C),_Mines)) :-
 	display_cells(Board,Width,0),
 	nl.
 
-initialize((Height,Width,NMines,(Dos,[],[]),Mines)) :-
+initial_display(Width,Cells) :-
+	format("How to play: Enter a position 'Y,X.' to reveal row Y column X, where 0,0. is the top left corner. To place a flag, enter 'flag(Y,X).' Revealing a mine or flagging a safe tile will end the game.",[]),nl,
+	format("Enter '.' or any invalid move to let the AI play.",[]),nl,
+	display_cells(Cells,Width,0),
+	nl.
+
+initialize((Height,Width,NMines,(Dos,[],[]),Mines),State1) :-
 	Height>0, Width>0,
 	%assert((invalidcoord(Y,X):- Y<0; X<0; Height=<Y; Width=<X)),
 	NCells is Height*Width,
-	NMines =< NCells,
+	NMines < NCells,
 	build_cells(0,0,Height,Width,Dos),
-	place_mines(NMines,Dos,Mines).
+	initial_display(Width,Dos),
+	choose_move((Height,Width,NMines,_,_),Startmove),
+	legal_move((Height,Width,NMines,_,_),Startmove),
+	move_coords(Startmove,Startpos),
+	delete(Dos,cell(Startpos,_),Dos1),
+	place_mines(NMines,Dos1,Mines),
+	State = (Height,Width,NMines,(Dos,[],[]),Mines),
+	move(State,Startmove,State1).
+
+move_coords((Y,X),(Y,X)).
+move_coords(flag(Y,X),(Y,X)).
 
 build_cells(Y,X,H,W,[cell((Y,X),(_,_))|Cells]) :-
 	%Mine in 0..1,
@@ -162,14 +178,16 @@ move(State,(Y,X),State1) :-
 	State1 = (H,W,N,([],[],Dones1),Mines).
 
 %Reveal safe cell
-move(State,(Y,X),State1) :-
+move(State,(Y,X),State2) :-
 	State = (H,W,N,Cells,Mines),
 	\+(memberchk(cell((Y,X),_),Mines)),
 	write('Revealing: '), write((Y,X)), nl,
 	%trace,
 	reveal((Y,X),Cells,Mines,Cells1),
-	prune_done(Cells1,Mines,Cells2),
-	State1 = (H,W,N,Cells2,Mines).
+	State1 = (H,W,N,Cells1,Mines),
+	%trace,
+	prune(State1,State2).
+	
 
 move(State,flag(Y,X),State1) :-
 	State = (H,W,N,(Dos,Cons,Dones),Mines),
@@ -184,18 +202,19 @@ move(State,flag(Y,X),State1) :-
 
 %Flag cell
 move(State,flag(Y,X),State1) :-
-	State = (H,W,N,Cells,Mines),
+	State = (_H,_W,_N,Cells,Mines),
 	%N1 is N - 1,
 	memberchk(cell((Y,X),_),Mines),
+	%notrace,
 	write('Flagging: '), write((Y,X)), nl,
+	%trace,
 	flag((Y,X),Cells),
 	%trace,
-	prune_done(Cells,Mines,Cells1),
-	State1 = (H,W,N,Cells1,Mines).
+	prune(State,State1).
 	
 
 
-move(S,nomove,S).
+%move(S,nomove,S).
 
 
 %prompt(X) :-
@@ -209,25 +228,34 @@ flag((Y,X),(Dos,_,_)) :-
 	flagged(C),
 	memberchk(C,Dos).
 
-%prune_done(Cells,[cell((Y,X),_)|Mines],Cells2) :-
-%	%trace,
-%	Cells = (Dos,Cons,Dones),
-%	C = cell((Y,X),_),
-%	memberchk(C,Dos),
-%	all_adjacent(cell((Y,X),_),Cons,Ads),
-%	cons_satisfied(Ads,Dos),
-%	%trace,
-%	%trace,
-%	ord_del_element(Dos,C,Dos1),
-%	write('deleted: '), write(C), nl,
-%	ord_add_element(Dones,C,Dones1),
-%	ord_subtract(Cons,Ads,Cons1),
-%	ord_union(Dones1,Ads,Dones2),
-%	Cells1 = (Dos1,Cons1,Dones2),
-%	prune_done(Cells1,Mines,Cells2).
-%prune_done(Cells,[_|Mines],Cells1) :-
-	%prune_done(Cells,Mines,Cells1).
-prune_done(Cells,_,Cells).
+prune(State,State1):-
+	State = (H,W,N,Cells,Mines),
+	prune_done(Cells,Mines,N,N1,Cells1),
+	State1 = (H,W,N1,Cells1,Mines).
+prune_done(Cells,[cell((Y,X),_)|Mines],N,N2,Cells2) :-
+	%trace,
+	Cells = (Dos,Cons,Dones),
+	C = cell((Y,X),_),
+	memberchk(C,Dos),
+	is_flagged(C),
+	all_adjacent(C,Dos,AdDos),
+	all_flagged(AdDos),
+	all_adjacent(C,Cons,Ads),
+	cons_satisfied(Ads,Dos),
+	%trace,
+	%trace,
+	ord_del_element(Dos,C,Dos1),
+	N1 is N-1,
+	write('deleted: '), write(C), nl,
+	ord_add_element(Dones,C,Dones1),
+	ord_subtract(Cons,Ads,Cons1),
+	write('subtracted: '), write(Ads), nl,
+	ord_union(Dones1,Ads,Dones2),
+	Cells1 = (Dos1,Cons1,Dones2),
+	prune_done(Cells1,Mines,N1,N2,Cells2).
+prune_done(Cells,[_|Mines],N,N1,Cells1) :-
+	prune_done(Cells,Mines,N,N1,Cells1).
+prune_done(Cells,_,N,N,Cells).
 
 %prune_satisfied(a).
 
@@ -331,19 +359,33 @@ adjacent_flags(Cell,Cells,N) :-
 	findall(C,(member(C,Cells),adjacent(Cell,C),is_flagged(C)),Ads),
 	length(Ads,N).
 
+get_adjacent_flags(Cell,Cells,Ads) :-
+	findall(C,(member(C,Cells),adjacent(Cell,C),is_flagged(C)),Ads).
+
+get_adjacent_flags([D|Ds],Cells,Ads2) :-
+	findall(C,(member(C,Cells),adjacent(D,C),is_flagged(C)),Ads),
+	ord_union(Ads,Ads1,Ads2),
+	get_adjacent_flags(Ds,Cells,Ads1).
+get_adjacent_flags([],_,[]).
+
 constraint(cell(_,(N,0)),N).
 
 %Constraints have all surrounding mines in Dos flagged
 cons_satisfied([C|Cs],Dos) :-
-	constraint(C,N),
-	adjacent_flags(C,Dos,N),
+	all_adjacent(C,Dos,Adj),
+	all_flagged(Adj),
 	cons_satisfied(Cs,Dos).
 cons_satisfied([],_).
 
-
-
 flagged(cell(_,('F',1))).
-is_flagged(cell(_,Content)) :- Content == ('F',1).
+
+is_flagged(cell(A,B)):-
+	all_flagged([cell(A,B)]).
+all_flagged([cell(_,Content)|Cs]) :-
+	Content == ('F',1),
+	all_flagged(Cs).
+all_flagged([]).
+	
 	
 
 sum_mines([cell(_,(_,Mine))|Cs],Sum) :-

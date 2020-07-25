@@ -1,6 +1,6 @@
 :- use_module(library(clpfd)), use_module(library(random)), use_module(library(ordsets)), use_module(library(lists)).
 
-
+%Anton Ehlert
 
 %Cells is a list of rows of cells
 %Valid moves: Reveal,flag,
@@ -9,10 +9,18 @@ test(H,W,N,C,M):-
 
 %startprompt(Height,Width,N).
 
+play(mini) :-
+	play(5,6,8).
+play(easy) :-
+	play(8,8,10).
+play(normal) :-
+	play(16,16,40).
+play(hard) :-
+	play(16,40,99).
 
-play :-
+play(H,W,N) :-
 	%initialize(Game,State),
-	State = (5,5,10,_Cells,_Mines),
+	State = (H,W,N,_Cells,_Mines),
 	initialize(State,State1), 
 	display_game(State1),
 	play(State1,_Result).
@@ -39,15 +47,15 @@ announce(Result) :-
 	
 
 display_game((_Height,Width,_NMines,(A,B,C),_Mines)) :-
-	length(A,La),length(B,Lb),length(C,Lc),
-	format("Dos: ~d, Cons: ~d, Dones: ~d~n",[La,Lb,Lc]),
+	%length(A,La),length(B,Lb),length(C,Lc),
+	%format("Dos: ~d, Cons: ~d, Dones: ~d~n",[La,Lb,Lc]),
 	ord_union([A,B,C],Board),
 	display_cells(Board,Width,0),
 	nl.
 
 initial_display(Width,Cells) :-
-	format("How to play: Enter a position 'Y,X.' to reveal row Y column X, where 0,0. is the top left corner. To place a flag, enter 'flag(Y,X).' Revealing a mine or flagging a safe tile will end the game.",[]),nl,
-	format("Enter '.' or any invalid move to let the AI play.",[]),nl,
+	format("How to play: Enter a position 'Y,X.' (without quotes) to reveal row Y column X, where 0,0. is the top left corner. To place a flag, enter 'flag(Y,X).' Revealing a mine or flagging a safe tile will end the game.",[]),nl,
+	format("Enter '.' or any invalid move to let the AI select a guaranteed safe move. If fewer than 25 tiles and 10 mines are in play, the AI may use brute force.",[]),nl,
 	display_cells(Cells,Width,0),
 	nl.
 
@@ -90,11 +98,11 @@ place_mines(0,_,[]).
 choose_move(State,Move) :-
 	player_move(State,Move).
 choose_move(State,Move) :-
-	write('ai move.'), nl,
+	write('AI moving.'), nl,
 	ai_evaluate_constraints(State),
 	ai_move(State,Move).
 choose_move(_,nomove) :-
-	write('No move.'), nl.
+	write('No safe move found.'), nl.
 
 
 
@@ -114,8 +122,10 @@ ai_move((_H,_W,_,(Dos,_Cons,_Dones),_M),(Y,X)) :-
 	member(cell((Y,X),(_,N)),Dos),		%Generate
 	N==0.					%Test
 
-ai_move((_H,_W,_,(Dos,_Cons,_Dones),_M),Pos) :-
-	write('Guess: '),nl,
+ai_move((_H,_W,N,(Dos,_Cons,_Dones),_M),Pos) :-
+	length(Dos,M),
+	M =< 25, N =< 10,
+	write('Brute force: '),nl,
 	%trace,
 	getvars(Dos,Vars),
 	findall(Vars,(labeling([],Vars)),L),
@@ -166,6 +176,8 @@ legal_move((Height,Width,_,_,_),(Y,X)) :-
 
 legal_move(_,nomove).
 
+move(S,nomove,S).
+
 %If attempting to reveal a mine, end game by moving all cells to Dones
 move(State,(Y,X),State1) :-
 	State = (H,W,N,(Dos,Cons,Dones),Mines),
@@ -213,16 +225,6 @@ move(State,flag(Y,X),State1) :-
 	prune(State,State1).
 	
 
-
-%move(S,nomove,S).
-
-
-%prompt(X) :-
-	
-
-
-
-
 flag((Y,X),(Dos,_,_)) :-
 	C = cell((Y,X),_),
 	flagged(C),
@@ -233,7 +235,6 @@ prune(State,State1):-
 	prune_done(Cells,Mines,N,N1,Cells1),
 	State1 = (H,W,N1,Cells1,Mines).
 prune_done(Cells,[cell((Y,X),_)|Mines],N,N2,Cells2) :-
-	%trace,
 	Cells = (Dos,Cons,Dones),
 	C = cell((Y,X),_),
 	memberchk(C,Dos),
@@ -242,14 +243,12 @@ prune_done(Cells,[cell((Y,X),_)|Mines],N,N2,Cells2) :-
 	all_flagged(AdDos),
 	all_adjacent(C,Cons,Ads),
 	cons_satisfied(Ads,Dos),
-	%trace,
-	%trace,
 	ord_del_element(Dos,C,Dos1),
 	N1 is N-1,
-	write('deleted: '), write(C), nl,
+	%write('pruning flagged: '), write(C), nl,
 	ord_add_element(Dones,C,Dones1),
 	ord_subtract(Cons,Ads,Cons1),
-	write('subtracted: '), write(Ads), nl,
+	%write('pruning constraints: '), write(Ads), nl,
 	ord_union(Dones1,Ads,Dones2),
 	Cells1 = (Dos1,Cons1,Dones2),
 	prune_done(Cells1,Mines,N1,N2,Cells2).
@@ -377,12 +376,12 @@ cons_satisfied([C|Cs],Dos) :-
 	cons_satisfied(Cs,Dos).
 cons_satisfied([],_).
 
-flagged(cell(_,('F',1))).
+flagged(cell(_,('X',1))).
 
 is_flagged(cell(A,B)):-
 	all_flagged([cell(A,B)]).
 all_flagged([cell(_,Content)|Cs]) :-
-	Content == ('F',1),
+	Content == ('X',1),
 	all_flagged(Cs).
 all_flagged([]).
 	
